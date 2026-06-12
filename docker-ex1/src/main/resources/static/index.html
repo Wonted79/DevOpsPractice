@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <title>Item CRUD</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', sans-serif; background: #f0f2f5; color: #333; }
+
+    header {
+      background: #4f46e5;
+      color: #fff;
+      padding: 18px 32px;
+      font-size: 1.3rem;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+    }
+
+    .container { max-width: 860px; margin: 32px auto; padding: 0 16px; }
+
+    .card {
+      background: #fff;
+      border-radius: 10px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+      padding: 24px;
+      margin-bottom: 24px;
+    }
+
+    .card h2 { font-size: 1rem; font-weight: 600; margin-bottom: 16px; color: #4f46e5; }
+
+    .form-row { display: flex; gap: 12px; flex-wrap: wrap; }
+    .form-row input {
+      flex: 1;
+      min-width: 140px;
+      padding: 9px 12px;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      font-size: 0.9rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .form-row input:focus { border-color: #4f46e5; }
+
+    button {
+      padding: 9px 18px;
+      border: none;
+      border-radius: 6px;
+      font-size: 0.88rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    button:hover { opacity: 0.85; }
+    .btn-create  { background: #4f46e5; color: #fff; }
+    .btn-update  { background: #0ea5e9; color: #fff; }
+    .btn-cancel  { background: #e5e7eb; color: #374151; }
+    .btn-edit    { background: #fbbf24; color: #fff; padding: 5px 12px; }
+    .btn-delete  { background: #ef4444; color: #fff; padding: 5px 12px; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+    th { background: #f9fafb; color: #6b7280; font-weight: 600; padding: 10px 14px; text-align: left; border-bottom: 2px solid #e5e7eb; }
+    td { padding: 10px 14px; border-bottom: 1px solid #f3f4f6; vertical-align: middle; }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: #fafafa; }
+
+    .empty { text-align: center; color: #9ca3af; padding: 24px 0; font-size: 0.9rem; }
+
+    #toast {
+      position: fixed;
+      bottom: 28px; right: 28px;
+      background: #1f2937;
+      color: #fff;
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-size: 0.88rem;
+      opacity: 0;
+      transition: opacity 0.3s;
+      pointer-events: none;
+    }
+    #toast.show { opacity: 1; }
+  </style>
+</head>
+<body>
+
+<header>In-Memory Item CRUD</header>
+
+<div class="container">
+
+  <!-- 등록 / 수정 폼 -->
+  <div class="card">
+    <h2 id="formTitle">새 아이템 등록</h2>
+    <div class="form-row">
+      <input id="inputName"        type="text" placeholder="이름" />
+      <input id="inputDescription" type="text" placeholder="설명" />
+      <button class="btn-create" id="btnSubmit" onclick="submitForm()">등록</button>
+      <button class="btn-cancel"  id="btnCancel" style="display:none" onclick="resetForm()">취소</button>
+    </div>
+  </div>
+
+  <!-- 목록 -->
+  <div class="card">
+    <h2>아이템 목록</h2>
+    <table>
+      <thead>
+        <tr><th>ID</th><th>이름</th><th>설명</th><th style="width:120px">작업</th></tr>
+      </thead>
+      <tbody id="itemTableBody"></tbody>
+    </table>
+  </div>
+
+</div>
+
+<div id="toast"></div>
+
+<script>
+  const API = '/api/items';
+  let editingId = null;
+
+  async function load() {
+    const res = await fetch(API);
+    const items = await res.json();
+    const tbody = document.getElementById('itemTableBody');
+
+    if (items.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="4" class="empty">등록된 아이템이 없습니다.</td></tr>';
+      return;
+    }
+
+    items.sort((a, b) => a.id - b.id);
+    tbody.innerHTML = items.map(item => `
+      <tr>
+        <td>${item.id}</td>
+        <td>${escHtml(item.name)}</td>
+        <td>${escHtml(item.description)}</td>
+        <td>
+          <button class="btn-edit"   onclick="startEdit(${item.id}, '${escAttr(item.name)}', '${escAttr(item.description)}')">수정</button>
+          <button class="btn-delete" onclick="deleteItem(${item.id})">삭제</button>
+        </td>
+      </tr>
+    `).join('');
+  }
+
+  async function submitForm() {
+    const name        = document.getElementById('inputName').value.trim();
+    const description = document.getElementById('inputDescription').value.trim();
+    if (!name) { toast('이름을 입력하세요.'); return; }
+
+    if (editingId === null) {
+      await fetch(API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, description })
+      });
+      toast('등록되었습니다.');
+    } else {
+      await fetch(`${API}/${editingId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, description })
+      });
+      toast('수정되었습니다.');
+    }
+
+    resetForm();
+    load();
+  }
+
+  async function deleteItem(id) {
+    if (!confirm(`ID ${id} 아이템을 삭제하시겠습니까?`)) return;
+    await fetch(`${API}/${id}`, { method: 'DELETE' });
+    toast('삭제되었습니다.');
+    load();
+  }
+
+  function startEdit(id, name, description) {
+    editingId = id;
+    document.getElementById('inputName').value        = name;
+    document.getElementById('inputDescription').value = description;
+    document.getElementById('formTitle').textContent  = `아이템 수정 (ID: ${id})`;
+    document.getElementById('btnSubmit').textContent  = '수정';
+    document.getElementById('btnSubmit').className    = 'btn-update';
+    document.getElementById('btnCancel').style.display = '';
+    document.getElementById('inputName').focus();
+  }
+
+  function resetForm() {
+    editingId = null;
+    document.getElementById('inputName').value        = '';
+    document.getElementById('inputDescription').value = '';
+    document.getElementById('formTitle').textContent  = '새 아이템 등록';
+    document.getElementById('btnSubmit').textContent  = '등록';
+    document.getElementById('btnSubmit').className    = 'btn-create';
+    document.getElementById('btnCancel').style.display = 'none';
+  }
+
+  function escHtml(s) {
+    return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+  function escAttr(s) {
+    return String(s ?? '').replace(/'/g, "\\'");
+  }
+
+  let toastTimer;
+  function toast(msg) {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => el.classList.remove('show'), 2200);
+  }
+
+  load();
+</script>
+
+</body>
+</html>
