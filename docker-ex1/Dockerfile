@@ -30,3 +30,4 @@ ENTRYPOINT ["java","-Dspring.profiles.active=default","-jar","app.jar"]
 # docker run -d -p 3307:3306 --name mariadb-test -e MARIADB_ROOT_PASSWORD=1234 mariadb
 # 마리아 db 실행
 # docker exec -it mariadb-test -uroot -p
+# docker logs 컨테이너 이름
